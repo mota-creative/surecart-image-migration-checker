@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SureCart Image Migration Checker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8f9fa; color: #1a1a2e; padding: 2rem; }
+        .container { max-width: 960px; margin: 0 auto; }
+        h1 { font-size: 1.6rem; margin-bottom: 0.3rem; color: #1a1a2e; }
+        .subtitle { color: #6b7280; margin-bottom: 2rem; font-size: 0.95rem; }
+        .config { background: #fff; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+        .form-row { display: flex; gap: 1rem; align-items: flex-end; }
+        .form-group { flex: 1; }
+        label { display: block; font-weight: 600; margin-bottom: 0.3rem; font-size: 0.85rem; color: #4b5563; }
+        input { width: 100%; padding: 0.55rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; transition: border 0.2s; }
+        input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        button { background: #2563eb; color: #fff; border: none; padding: 0.55rem 1.5rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer; font-weight: 600; white-space: nowrap; height: 38px; transition: background 0.2s; }
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        #status { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 8px; display: none; font-size: 0.9rem; }
+        .status-loading { background: #eff6ff; color: #1e40af; display: block !important; }
+        .status-error { background: #fef2f2; color: #991b1b; display: block !important; }
+        .status-success { background: #f0fdf4; color: #166534; display: block !important; }
+
+        .summary { background: #fff; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+        .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+        .summary-stat { text-align: center; padding: 0.75rem; border-radius: 8px; }
+        .summary-stat .num { font-size: 2rem; font-weight: 700; line-height: 1.2; }
+        .summary-stat .label { font-size: 0.75rem; color: #6b7280; margin-top: 0.2rem; }
+        .stat-total { background: #f0f4ff; }
+        .stat-total .num { color: #2563eb; }
+        .stat-cdn { background: #fef2f2; }
+        .stat-cdn .num { color: #dc2626; }
+        .stat-wp { background: #f0fdf4; }
+        .stat-wp .num { color: #16a34a; }
+        .stat-none { background: #fefce8; }
+        .stat-none .num { color: #ca8a04; }
+
+        .section-title { font-size: 1.1rem; font-weight: 700; margin: 1.5rem 0 0.75rem; padding-left: 0.25rem; }
+        .product-card { background: #fff; border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 1rem; border-left: 4px solid transparent; }
+        .product-card.cdn { border-left-color: #ef4444; }
+        .product-card.wp { border-left-color: #22c55e; }
+        .product-card.no-image { border-left-color: #eab308; }
+        .img-preview { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; flex-shrink: 0; background: #f3f4f6; }
+        .img-placeholder { width: 56px; height: 56px; border-radius: 6px; flex-shrink: 0; background: #f3f4f6; display: flex; align-items: center; justify-content: center; color: #d1d5db; font-size: 1.2rem; }
+        .product-info { flex: 1; min-width: 0; }
+        .product-name { font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .product-meta { font-size: 0.8rem; color: #9ca3af; margin-top: 0.15rem; }
+        .badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 99px; font-size: 0.7rem; font-weight: 600; margin-left: 0.5rem; vertical-align: middle; }
+        .badge-cdn { background: #fef2f2; color: #dc2626; }
+        .badge-wp { background: #f0fdf4; color: #16a34a; }
+        .badge-match { background: #f0fdf4; color: #16a34a; }
+        .badge-mismatch { background: #fefce8; color: #ca8a04; }
+        .badge-none { background: #fefce8; color: #ca8a04; }
+        .info-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; font-size: 0.85rem; color: #1e40af; line-height: 1.5; }
+        .migrate-bar { background: #fff; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+        .migrate-bar h3 { font-size: 1rem; margin-bottom: 0.75rem; }
+        .migrate-bar .form-row { flex-wrap: wrap; }
+        .migrate-bar .form-group { min-width: 200px; }
+        .migrate-actions { display: flex; gap: 0.75rem; margin-top: 1rem; flex-wrap: wrap; }
+        .btn-migrate { background: #7c3aed; }
+        .btn-migrate:hover { background: #6d28d9; }
+        .btn-fix-domain { background: #ea580c; }
+        .btn-fix-domain:hover { background: #c2410c; }
+        .btn-secondary { background: #6b7280; }
+        .btn-secondary:hover { background: #4b5563; }
+        .progress-bar-wrap { width: 100%; height: 8px; background: #e5e7eb; border-radius: 99px; margin-top: 0.75rem; overflow: hidden; display: none; }
+        .progress-bar-fill { height: 100%; background: #2563eb; border-radius: 99px; transition: width 0.3s; width: 0%; }
+        .migrate-log { margin-top: 0.75rem; max-height: 200px; overflow-y: auto; font-size: 0.8rem; font-family: 'SF Mono', Monaco, monospace; background: #f9fafb; border-radius: 6px; padding: 0.5rem 0.75rem; display: none; }
+        .migrate-log .log-ok { color: #16a34a; }
+        .migrate-log .log-err { color: #dc2626; }
+        .migrate-log .log-info { color: #2563eb; }
+        .url-table { width: 100%; margin-top: 0.4rem; border-collapse: collapse; }
+        .url-table td { font-size: 0.75rem; padding: 0.25rem 0.5rem; font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace; word-break: break-all; vertical-align: top; }
+        .url-table .url-label { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-weight: 600; white-space: nowrap; width: 80px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em; }
+        .url-old { background: #fef2f2; border-radius: 4px 4px 0 0; }
+        .url-old .url-label { color: #dc2626; }
+        .url-old td:last-child { color: #991b1b; }
+        .url-new { background: #f0fdf4; border-radius: 0 0 4px 4px; }
+        .url-new .url-label { color: #16a34a; }
+        .url-new td:last-child { color: #166534; }
+        .url-current { background: #f9fafb; border-radius: 4px; }
+        .url-current .url-label { color: #6b7280; }
+        .url-current td:last-child { color: #6b7280; }
+        .url-match { background: #f0fdf4; border-radius: 4px; }
+        .url-match .url-label { color: #16a34a; }
+        .url-match td:last-child { color: #166534; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SureCart Image Migration Checker</h1>
+        <p class="subtitle">Checks whether product images are in a WordPress media library or still on SureCart's CDN.</p>
+
+        <div class="config">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="apiKey">SureCart Secret API Key</label>
+                    <input type="password" id="apiKey" placeholder="st_...">
+                </div>
+                <div class="form-group">
+                    <label for="domain">Your Live Site Domain</label>
+                    <input type="text" id="domain" placeholder="e.g. mysite.com">
+                </div>
+                <button id="runBtn" onclick="runCheck()">Check Products</button>
+            </div>
+            <div id="status"></div>
+        </div>
+
+        <div id="migratePanel" style="display:none">
+            <div class="migrate-bar">
+                <h3>Migrate Images</h3>
+                <p style="font-size:0.85rem;color:#6b7280;margin-bottom:0.75rem;">
+                    To migrate CDN images to WordPress, provide your WP site credentials below. Wrong-domain images only need the domain fix (no WP credentials needed).
+                </p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="wpUser">WP Username</label>
+                        <input type="text" id="wpUser" placeholder="admin">
+                    </div>
+                    <div class="form-group">
+                        <label for="wpAppPass">WP Application Password</label>
+                        <input type="password" id="wpAppPass" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx">
+                    </div>
+                </div>
+                <div class="migrate-actions">
+                    <button class="btn-fix-domain" onclick="fixDomainUrls()" id="btnFixDomain" style="display:none">Fix Domain URLs</button>
+                    <button class="btn-migrate" onclick="migrateCdnImages()" id="btnMigrateCdn" style="display:none">Migrate CDN → WordPress</button>
+                    <button class="btn-secondary" onclick="exportCsv()" id="btnExport">Export CSV Report</button>
+                </div>
+                <div class="progress-bar-wrap" id="migrateProgress"><div class="progress-bar-fill" id="migrateProgressFill"></div></div>
+                <div class="migrate-log" id="migrateLog"></div>
+            </div>
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        /*
+         * Detection logic:
+         * - image_url containing /wp-content/uploads/ = WordPress media library (migrated)
+         * - image_url on surecart.com / cloudfront CDN = SureCart CDN (needs migration)
+         * - No image_url = no image set
+         *
+         * We do NOT require a domain input — we detect by URL path pattern instead.
+         */
+
+        const SURECART_CDN_HOSTS = [
+            'surecart.com',
+            'files.surecart.com',
+            'cdn.surecart.com',
+            'd1wc0stj82keig.cloudfront.net',
+        ];
+
+        function classifyImage(url) {
+            if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+                return 'none';
+            }
+            // WordPress media library pattern — any domain
+            if (url.includes('/wp-content/uploads/')) {
+                return 'wordpress';
+            }
+            // Check for known SureCart CDN hosts
+            try {
+                const hostname = new URL(url).hostname.toLowerCase();
+                for (const cdn of SURECART_CDN_HOSTS) {
+                    if (hostname === cdn || hostname.endsWith('.' + cdn)) {
+                        return 'surecart_cdn';
+                    }
+                }
+                // Broader cloudfront check (SureCart uses cloudfront)
+                if (hostname.endsWith('.cloudfront.net')) {
+                    return 'surecart_cdn';
+                }
+            } catch (e) {}
+            // Unknown external URL — flag for review
+            return 'unknown_external';
+        }
+
+        function getDomain(url) {
+            try { return new URL(url).hostname; } catch(e) { return ''; }
+        }
+
+        async function fetchAllProducts(apiKey) {
+            let all = [];
+            let page = 1;
+            const perPage = 100;
+
+            while (true) {
+                setStatus(`Fetching products (page ${page})...`, 'loading');
+                const resp = await fetch(`https://api.surecart.com/v1/products?page=${page}&per_page=${perPage}`, {
+                    headers: { 'Authorization': `Bearer ${apiKey}` }
+                });
+                if (!resp.ok) {
+                    const text = await resp.text();
+                    throw new Error(`API error ${resp.status}: ${text}`);
+                }
+                const data = await resp.json();
+                const products = data.data || [];
+                if (products.length === 0) break;
+                all = all.concat(products);
+                if (products.length < perPage) break;
+                page++;
+            }
+            return all;
+        }
+
+        function setStatus(msg, type) {
+            const el = document.getElementById('status');
+            el.textContent = msg;
+            el.className = `status-${type}`;
+        }
+
+        function buildExpectedUrl(currentUrl, targetDomain) {
+            if (!currentUrl || !targetDomain) return '';
+            try {
+                const parsed = new URL(currentUrl);
+                // Keep the path (e.g. /wp-content/uploads/2025/09/image.jpg) but swap the domain
+                return `https://${targetDomain}${parsed.pathname}`;
+            } catch (e) {
+                return '';
+            }
+        }
+
+        async function runCheck() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const targetDomain = document.getElementById('domain').value.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+            const btn = document.getElementById('runBtn');
+            if (!apiKey) { setStatus('Please enter your API key.', 'error'); return; }
+
+            btn.disabled = true;
+            document.getElementById('results').innerHTML = '';
+
+            try {
+                const products = await fetchAllProducts(apiKey);
+                setStatus(`Analysing ${products.length} products...`, 'loading');
+
+                const categorised = { cdn: [], wordpress_match: [], wordpress_mismatch: [], unknown: [], none: [] };
+
+                for (let pi = 0; pi < products.length; pi++) {
+                    const p = products[pi];
+                    let url = p.image_url || '';
+
+                    // If no image_url, check product_medias for the actual URL
+                    if (!url || classifyImage(url) === 'none') {
+                        setStatus(`Analysing ${products.length} products... (checking media ${pi + 1}/${products.length})`, 'loading');
+                        try {
+                            const medias = await fetchProductMedias(p.id);
+                            if (medias.length > 0) {
+                                url = await resolveProductMediaUrl(medias[0]);
+                            }
+                        } catch (e) {
+                            // If media fetch fails, keep original url
+                        }
+                    }
+
+                    const status = classifyImage(url);
+                    const currentDomain = getDomain(url);
+                    const domainMatches = targetDomain && currentDomain.toLowerCase() === targetDomain.toLowerCase();
+                    const expectedUrl = buildExpectedUrl(url, targetDomain);
+
+                    const entry = {
+                        name: p.name || 'Unnamed',
+                        id: p.id,
+                        slug: p.slug || '',
+                        image_url: url,
+                        expected_url: expectedUrl,
+                        domain: currentDomain,
+                        domainMatches,
+                        status
+                    };
+
+                    if (status === 'surecart_cdn') categorised.cdn.push(entry);
+                    else if (status === 'wordpress' && domainMatches) categorised.wordpress_match.push(entry);
+                    else if (status === 'wordpress' && !domainMatches) categorised.wordpress_mismatch.push(entry);
+                    else if (status === 'unknown_external') categorised.unknown.push(entry);
+                    else categorised.none.push(entry);
+                }
+
+                // Store for migration
+                lastCategorised = categorised;
+                lastTargetDomain = targetDomain;
+
+                renderResults(products.length, categorised, targetDomain);
+                showMigratePanel(categorised);
+
+                const needsAction = categorised.cdn.length + categorised.unknown.length + categorised.wordpress_mismatch.length;
+                if (needsAction > 0) {
+                    setStatus(`Done — ${needsAction} product(s) may need attention.`, 'error');
+                } else {
+                    setStatus(`Done — all images are on your live domain.`, 'success');
+                }
+            } catch (err) {
+                setStatus(`Error: ${err.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function renderResults(total, cat, targetDomain) {
+            const container = document.getElementById('results');
+            const needsAction = cat.cdn.length + cat.unknown.length + cat.wordpress_mismatch.length;
+            const allGood = cat.wordpress_match.length;
+
+            let html = `
+                <div class="summary">
+                    <div class="summary-grid">
+                        <div class="summary-stat stat-total">
+                            <div class="num">${total}</div>
+                            <div class="label">Total Products</div>
+                        </div>
+                        <div class="summary-stat stat-cdn">
+                            <div class="num">${needsAction}</div>
+                            <div class="label">Need Attention</div>
+                        </div>
+                        <div class="summary-stat stat-wp">
+                            <div class="num">${allGood}</div>
+                            <div class="label">On Live Domain</div>
+                        </div>
+                        <div class="summary-stat stat-none">
+                            <div class="num">${cat.none.length}</div>
+                            <div class="label">WP-Managed</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            if (needsAction === 0 && cat.none.length === 0) {
+                html += `<div class="info-box">All product images are on your live domain${targetDomain ? ' (' + targetDomain + ')' : ''}. Nothing to do.</div>`;
+            }
+
+            // SureCart CDN products
+            if (cat.cdn.length > 0) {
+                html += `<div class="section-title">On SureCart CDN — needs migration</div>`;
+                html += cat.cdn.map(p => productCard(p, 'cdn', targetDomain)).join('');
+            }
+
+            // WordPress but wrong domain
+            if (cat.wordpress_mismatch.length > 0) {
+                html += `<div class="section-title">In WP media but wrong domain</div>`;
+                html += `<div class="info-box">These images are in a WordPress media library but on a different domain (e.g. staging/dev). They should point to ${targetDomain || 'your live domain'}.</div>`;
+                html += cat.wordpress_mismatch.map(p => productCard(p, 'cdn', targetDomain)).join('');
+            }
+
+            // Unknown external
+            if (cat.unknown.length > 0) {
+                html += `<div class="section-title">Unknown external host — review</div>`;
+                html += cat.unknown.map(p => productCard(p, 'cdn', targetDomain)).join('');
+            }
+
+            // WordPress on correct domain
+            if (cat.wordpress_match.length > 0) {
+                html += `<div class="section-title">On live domain</div>`;
+                html += cat.wordpress_match.map(p => productCard(p, 'wp', targetDomain)).join('');
+            }
+
+            // No image via API
+            if (cat.none.length > 0) {
+                html += `<div class="section-title">No image in API</div>`;
+                html += `<div class="info-box">These products have no image data in SureCart's API. They may have images managed directly through the WordPress plugin — check the product page on your site to confirm.</div>`;
+                html += cat.none.map(p => productCard(p, 'no-image', targetDomain)).join('');
+            }
+
+            container.innerHTML = html;
+        }
+
+        function productCard(p, cssClass, targetDomain) {
+            const imgHtml = p.image_url
+                ? `<img src="${p.image_url}" class="img-preview" onerror="this.outerHTML='<div class=img-placeholder>?</div>'">`
+                : `<div class="img-placeholder">—</div>`;
+
+            let urlHtml = '';
+            if (p.image_url && cssClass === 'cdn') {
+                // Show old URL and expected new URL
+                urlHtml = `
+                    <table class="url-table">
+                        <tr class="url-old">
+                            <td class="url-label">Current</td>
+                            <td>${p.image_url}</td>
+                        </tr>
+                        ${p.expected_url && targetDomain ? `
+                        <tr class="url-new">
+                            <td class="url-label">Expected</td>
+                            <td>${p.expected_url}</td>
+                        </tr>` : ''}
+                    </table>
+                `;
+            } else if (p.image_url && cssClass === 'wp') {
+                // On correct domain — just show the URL
+                urlHtml = `
+                    <table class="url-table">
+                        <tr class="url-match">
+                            <td class="url-label">URL</td>
+                            <td>${p.image_url}</td>
+                        </tr>
+                    </table>
+                `;
+            }
+
+            let badgeHtml = '';
+            if (cssClass === 'cdn' && p.status === 'surecart_cdn') badgeHtml = '<span class="badge badge-cdn">SureCart CDN</span>';
+            else if (cssClass === 'cdn' && p.status === 'wordpress') badgeHtml = '<span class="badge badge-mismatch">Wrong Domain</span>';
+            else if (cssClass === 'cdn' && p.status === 'unknown_external') badgeHtml = '<span class="badge badge-cdn">External</span>';
+            else if (cssClass === 'wp') badgeHtml = '<span class="badge badge-wp">Live Domain</span>';
+            else if (cssClass === 'no-image') badgeHtml = '<span class="badge badge-none">No Image</span>';
+
+            return `
+                <div class="product-card ${cssClass}">
+                    ${imgHtml}
+                    <div class="product-info">
+                        <div class="product-name">${p.name} ${badgeHtml}</div>
+                        <div class="product-meta">${p.slug}</div>
+                        ${urlHtml}
+                    </div>
+                </div>
+            `;
+        }
+        function showMigratePanel(cat) {
+            const panel = document.getElementById('migratePanel');
+            const btnFix = document.getElementById('btnFixDomain');
+            const btnCdn = document.getElementById('btnMigrateCdn');
+
+            const hasMismatch = cat.wordpress_mismatch.length > 0;
+            const hasCdn = cat.cdn.length > 0 || (cat.unknown || []).length > 0;
+
+            if (!hasMismatch && !hasCdn) {
+                panel.style.display = 'none';
+                return;
+            }
+
+            panel.style.display = 'block';
+            btnFix.style.display = hasMismatch ? 'inline-block' : 'none';
+            btnFix.textContent = `Fix Domain URLs (${cat.wordpress_mismatch.length})`;
+            btnCdn.style.display = hasCdn ? 'inline-block' : 'none';
+            btnCdn.textContent = `Migrate CDN → WordPress (${cat.cdn.length + (cat.unknown || []).length})`;
+        }
+
+        // ── Migration state ──
+        let lastCategorised = null;
+        let lastTargetDomain = '';
+
+        function log(msg, cls = 'log-info') {
+            const el = document.getElementById('migrateLog');
+            el.style.display = 'block';
+            el.innerHTML += `<div class="${cls}">${msg}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function setProgress(pct) {
+            const wrap = document.getElementById('migrateProgress');
+            const fill = document.getElementById('migrateProgressFill');
+            wrap.style.display = 'block';
+            fill.style.width = pct + '%';
+        }
+
+        function clearLog() {
+            document.getElementById('migrateLog').innerHTML = '';
+            document.getElementById('migrateLog').style.display = 'none';
+            setProgress(0);
+            document.getElementById('migrateProgress').style.display = 'none';
+        }
+
+        // ── Fetch product_medias for a product ──
+        async function fetchProductMedias(productId) {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const resp = await fetch(`https://api.surecart.com/v1/product_medias?product_ids[]=${productId}&limit=100`, {
+                headers: { 'Authorization': `Bearer ${apiKey}` }
+            });
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(`SureCart API ${resp.status}: ${text}`);
+            }
+            const data = await resp.json();
+            return data.data || [];
+        }
+
+        // ── Fetch a media object by ID to get its URL ──
+        async function fetchMedia(mediaId) {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const resp = await fetch(`https://api.surecart.com/v1/medias/${mediaId}`, {
+                headers: { 'Authorization': `Bearer ${apiKey}` }
+            });
+            if (!resp.ok) return null;
+            return resp.json();
+        }
+
+        // ── Resolve the actual URL from a product_media (checks url field, then media reference) ──
+        async function resolveProductMediaUrl(productMedia) {
+            // Direct URL on product_media
+            if (productMedia.url) return productMedia.url;
+            // Media ID reference — fetch the media object
+            if (productMedia.media) {
+                const mediaId = typeof productMedia.media === 'object' ? productMedia.media.id : productMedia.media;
+                if (mediaId) {
+                    const media = await fetchMedia(mediaId);
+                    if (media && media.url) return media.url;
+                }
+            }
+            return '';
+        }
+
+        // ── Update a product_media URL ──
+        async function updateProductMediaUrl(mediaId, newUrl) {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const resp = await fetch(`https://api.surecart.com/v1/product_medias/${mediaId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ product_media: { url: newUrl } })
+            });
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(`SureCart API ${resp.status}: ${text}`);
+            }
+            return resp.json();
+        }
+
+        // ── Upload image to WordPress Media Library ──
+        async function uploadToWordPress(imageUrl, filename) {
+            const domain = document.getElementById('domain').value.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+            const wpUser = document.getElementById('wpUser').value.trim();
+            const wpAppPass = document.getElementById('wpAppPass').value.trim();
+
+            if (!wpUser || !wpAppPass) throw new Error('WP credentials required');
+
+            // Download the image via a proxy-free fetch (works if CORS allows, otherwise will fail gracefully)
+            const imgResp = await fetch(imageUrl);
+            if (!imgResp.ok) throw new Error(`Failed to download image: ${imgResp.status}`);
+            const blob = await imgResp.blob();
+
+            // Determine content type and filename
+            const contentType = blob.type || 'image/jpeg';
+            const ext = contentType.split('/')[1] || 'jpg';
+            const safeName = filename || `product-image.${ext}`;
+
+            // Upload to WP REST API
+            const uploadResp = await fetch(`https://${domain}/wp-json/wp/v2/media`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Basic ' + btoa(wpUser + ':' + wpAppPass),
+                    'Content-Disposition': `attachment; filename="${safeName}"`,
+                    'Content-Type': contentType
+                },
+                body: blob
+            });
+
+            if (!uploadResp.ok) {
+                const text = await uploadResp.text();
+                throw new Error(`WP upload failed ${uploadResp.status}: ${text}`);
+            }
+
+            const media = await uploadResp.json();
+            return media.source_url;
+        }
+
+        // ── Fix domain URLs (wrong-domain WP images) ──
+        async function fixDomainUrls() {
+            if (!lastCategorised || lastCategorised.wordpress_mismatch.length === 0) return;
+
+            const items = lastCategorised.wordpress_mismatch;
+            const targetDomain = document.getElementById('domain').value.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+            const btn = document.getElementById('btnFixDomain');
+            btn.disabled = true;
+            clearLog();
+            log(`Fixing domain for ${items.length} product(s) via product_medias API...`);
+
+            let success = 0, failed = 0;
+            for (let i = 0; i < items.length; i++) {
+                const p = items[i];
+                setProgress(((i + 1) / items.length) * 100);
+                try {
+                    // Fetch all product_medias for this product
+                    const medias = await fetchProductMedias(p.id);
+                    if (medias.length === 0) {
+                        log(`⊘ ${p.name}: no product_medias found, skipping`, 'log-info');
+                        continue;
+                    }
+
+                    let updated = 0;
+                    for (const m of medias) {
+                        const mediaUrl = m.url || '';
+                        if (!mediaUrl.includes('/wp-content/uploads/')) continue;
+
+                        // Swap domain in the media URL
+                        const newUrl = buildExpectedUrl(mediaUrl, targetDomain);
+                        if (!newUrl || newUrl === mediaUrl) continue;
+
+                        await updateProductMediaUrl(m.id, newUrl);
+                        updated++;
+                    }
+
+                    if (updated > 0) {
+                        log(`✓ ${p.name}: ${updated} media URL(s) updated → ${targetDomain}`, 'log-ok');
+                        success++;
+                    } else {
+                        log(`⊘ ${p.name}: no media URLs needed changing`, 'log-info');
+                    }
+                } catch (err) {
+                    log(`✗ ${p.name}: ${err.message}`, 'log-err');
+                    failed++;
+                }
+            }
+
+            log(`Done: ${success} fixed, ${failed} failed.`, success === items.length ? 'log-ok' : 'log-err');
+            btn.disabled = false;
+        }
+
+        // ── Migrate CDN images to WordPress ──
+        async function migrateCdnImages() {
+            if (!lastCategorised) return;
+
+            const items = [...lastCategorised.cdn, ...(lastCategorised.unknown || [])];
+            if (items.length === 0) return;
+
+            const wpUser = document.getElementById('wpUser').value.trim();
+            const wpAppPass = document.getElementById('wpAppPass').value.trim();
+            if (!wpUser || !wpAppPass) {
+                log('Enter your WordPress username and application password first.', 'log-err');
+                return;
+            }
+
+            const btn = document.getElementById('btnMigrateCdn');
+            btn.disabled = true;
+            clearLog();
+            log(`Migrating ${items.length} image(s) from CDN to WordPress...`);
+
+            let success = 0, failed = 0;
+            for (let i = 0; i < items.length; i++) {
+                const p = items[i];
+                setProgress(((i + 1) / items.length) * 100);
+
+                if (!p.image_url) {
+                    log(`⊘ ${p.name}: no image URL, skipping`, 'log-info');
+                    continue;
+                }
+
+                try {
+                    // Extract a filename from the original URL
+                    const urlPath = new URL(p.image_url).pathname;
+                    const filename = urlPath.split('/').pop() || `${p.slug || p.id}.jpg`;
+
+                    log(`↓ Downloading: ${p.name}...`, 'log-info');
+                    const newUrl = await uploadToWordPress(p.image_url, filename);
+
+                    log(`↑ Uploaded to WP: ${newUrl}`, 'log-info');
+
+                    // Update all product_medias for this product
+                    const medias = await fetchProductMedias(p.id);
+                    for (const m of medias) {
+                        await updateProductMediaUrl(m.id, newUrl);
+                    }
+                    log(`✓ ${p.name} → ${newUrl}`, 'log-ok');
+                    success++;
+                } catch (err) {
+                    log(`✗ ${p.name}: ${err.message}`, 'log-err');
+                    failed++;
+                }
+            }
+
+            log(`Done: ${success} migrated, ${failed} failed.`, success === items.length ? 'log-ok' : 'log-err');
+            btn.disabled = false;
+        }
+
+        // ── Export CSV ──
+        function exportCsv() {
+            if (!lastCategorised) return;
+
+            const rows = [['Name', 'Slug', 'Product ID', 'Status', 'Current URL', 'Expected URL']];
+            const allItems = [
+                ...lastCategorised.cdn.map(p => ({ ...p, cat: 'SureCart CDN' })),
+                ...lastCategorised.wordpress_mismatch.map(p => ({ ...p, cat: 'Wrong Domain' })),
+                ...(lastCategorised.unknown || []).map(p => ({ ...p, cat: 'Unknown External' })),
+                ...lastCategorised.wordpress_match.map(p => ({ ...p, cat: 'Live Domain (OK)' })),
+                ...lastCategorised.none.map(p => ({ ...p, cat: 'No Image' })),
+            ];
+
+            for (const p of allItems) {
+                rows.push([p.name, p.slug, p.id, p.cat, p.image_url || '', p.expected_url || '']);
+            }
+
+            const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'surecart-image-report.csv';
+            a.click();
+        }
+    </script>
+</body>
+</html>
