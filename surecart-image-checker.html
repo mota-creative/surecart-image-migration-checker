@@ -242,42 +242,85 @@
 
                 for (let pi = 0; pi < products.length; pi++) {
                     const p = products[pi];
-                    let url = p.image_url || '';
+                    setStatus(`Analysing ${products.length} products... (checking ${pi + 1}/${products.length})`, 'loading');
 
-                    // If no image_url, check product_medias for the actual URL
-                    if (!url || classifyImage(url) === 'none') {
-                        setStatus(`Analysing ${products.length} products... (checking media ${pi + 1}/${products.length})`, 'loading');
-                        try {
-                            const medias = await fetchProductMedias(p.id);
-                            if (medias.length > 0) {
-                                url = await resolveProductMediaUrl(medias[0]);
+                    // Collect ALL image URLs for this product
+                    const allUrls = [];
+
+                    // 1. product-level image_url
+                    if (p.image_url && classifyImage(p.image_url) !== 'none') {
+                        allUrls.push(p.image_url);
+                    }
+
+                    // 2. All product_medias (gallery images)
+                    try {
+                        const medias = await fetchProductMedias(p.id);
+                        for (const m of medias) {
+                            const mUrl = await resolveProductMediaUrl(m);
+                            if (mUrl && !allUrls.includes(mUrl)) {
+                                allUrls.push(mUrl);
                             }
-                        } catch (e) {
-                            // If media fetch fails, keep original url
+                        }
+                    } catch (e) {}
+
+                    // If no URLs found at all
+                    if (allUrls.length === 0) {
+                        categorised.none.push({
+                            name: p.name || 'Unnamed', id: p.id, slug: p.slug || '',
+                            image_url: '', expected_url: '', domain: '', domainMatches: false, status: 'none'
+                        });
+                        continue;
+                    }
+
+                    // Classify the worst status across all images
+                    let worstStatus = 'wordpress';
+                    let worstMatch = true;
+                    const badUrls = [];
+                    const goodUrls = [];
+
+                    for (const url of allUrls) {
+                        const imgStatus = classifyImage(url);
+                        const imgDomain = getDomain(url);
+                        const imgMatch = targetDomain && imgDomain.toLowerCase() === targetDomain.toLowerCase();
+
+                        if (imgStatus === 'surecart_cdn' || imgStatus === 'unknown_external') {
+                            badUrls.push({ url, status: imgStatus });
+                            worstStatus = imgStatus;
+                            worstMatch = false;
+                        } else if (imgStatus === 'wordpress' && !imgMatch) {
+                            badUrls.push({ url, status: 'wordpress_mismatch' });
+                            if (worstStatus !== 'surecart_cdn') worstStatus = 'wordpress';
+                            worstMatch = false;
+                        } else {
+                            goodUrls.push(url);
                         }
                     }
 
-                    const status = classifyImage(url);
-                    const currentDomain = getDomain(url);
-                    const domainMatches = targetDomain && currentDomain.toLowerCase() === targetDomain.toLowerCase();
-                    const expectedUrl = buildExpectedUrl(url, targetDomain);
-
+                    const primaryUrl = allUrls[0];
                     const entry = {
                         name: p.name || 'Unnamed',
                         id: p.id,
                         slug: p.slug || '',
-                        image_url: url,
-                        expected_url: expectedUrl,
-                        domain: currentDomain,
-                        domainMatches,
-                        status
+                        image_url: primaryUrl,
+                        all_urls: allUrls,
+                        bad_urls: badUrls,
+                        expected_url: buildExpectedUrl(primaryUrl, targetDomain),
+                        domain: getDomain(primaryUrl),
+                        domainMatches: worstMatch,
+                        status: classifyImage(primaryUrl)
                     };
 
-                    if (status === 'surecart_cdn') categorised.cdn.push(entry);
-                    else if (status === 'wordpress' && domainMatches) categorised.wordpress_match.push(entry);
-                    else if (status === 'wordpress' && !domainMatches) categorised.wordpress_mismatch.push(entry);
-                    else if (status === 'unknown_external') categorised.unknown.push(entry);
-                    else categorised.none.push(entry);
+                    if (badUrls.length > 0) {
+                        // Categorise by worst issue
+                        const hasCdn = badUrls.some(u => u.status === 'surecart_cdn' || u.status === 'unknown_external');
+                        if (hasCdn) {
+                            categorised.cdn.push(entry);
+                        } else {
+                            categorised.wordpress_mismatch.push(entry);
+                        }
+                    } else {
+                        categorised.wordpress_match.push(entry);
+                    }
                 }
 
                 // Store for migration
@@ -373,8 +416,26 @@
                 : `<div class="img-placeholder">—</div>`;
 
             let urlHtml = '';
-            if (p.image_url && cssClass === 'cdn') {
-                // Show old URL and expected new URL
+            if (cssClass === 'cdn' && p.bad_urls && p.bad_urls.length > 0) {
+                // Show all bad URLs
+                urlHtml = `<table class="url-table">`;
+                for (const bu of p.bad_urls) {
+                    const expected = buildExpectedUrl(bu.url, targetDomain);
+                    urlHtml += `
+                        <tr class="url-old">
+                            <td class="url-label">Current</td>
+                            <td>${bu.url}</td>
+                        </tr>`;
+                    if (expected && targetDomain) {
+                        urlHtml += `
+                        <tr class="url-new">
+                            <td class="url-label">Expected</td>
+                            <td>${expected}</td>
+                        </tr>`;
+                    }
+                }
+                urlHtml += `</table>`;
+            } else if (p.image_url && cssClass === 'cdn') {
                 urlHtml = `
                     <table class="url-table">
                         <tr class="url-old">
@@ -423,7 +484,7 @@
             const btnFix = document.getElementById('btnFixDomain');
             const btnCdn = document.getElementById('btnMigrateCdn');
 
-            const hasMismatch = cat.wordpress_mismatch.length > 0;
+            const hasMismatch = cat.wordpress_mismatch.length > 0 || cat.cdn.length > 0;
             const hasCdn = cat.cdn.length > 0 || (cat.unknown || []).length > 0;
 
             if (!hasMismatch && !hasCdn) {
@@ -432,8 +493,9 @@
             }
 
             panel.style.display = 'block';
+            const fixCount = cat.wordpress_mismatch.length + cat.cdn.length;
             btnFix.style.display = hasMismatch ? 'inline-block' : 'none';
-            btnFix.textContent = `Fix Domain URLs (${cat.wordpress_mismatch.length})`;
+            btnFix.textContent = `Fix Domain URLs (${fixCount})`;
             btnCdn.style.display = hasCdn ? 'inline-block' : 'none';
             btnCdn.textContent = `Migrate CDN → WordPress (${cat.cdn.length + (cat.unknown || []).length})`;
         }
@@ -560,9 +622,10 @@
 
         // ── Fix domain URLs (wrong-domain WP images) ──
         async function fixDomainUrls() {
-            if (!lastCategorised || lastCategorised.wordpress_mismatch.length === 0) return;
-
-            const items = lastCategorised.wordpress_mismatch;
+            const mismatch = lastCategorised ? lastCategorised.wordpress_mismatch : [];
+            const cdn = lastCategorised ? lastCategorised.cdn : [];
+            const items = [...mismatch, ...cdn];
+            if (items.length === 0) return;
             const targetDomain = document.getElementById('domain').value.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
             const btn = document.getElementById('btnFixDomain');
             btn.disabled = true;
@@ -583,10 +646,17 @@
 
                     let updated = 0;
                     for (const m of medias) {
-                        const mediaUrl = m.url || '';
+                        // Resolve URL from direct url or media ID reference
+                        const mediaUrl = await resolveProductMediaUrl(m);
+                        if (!mediaUrl) continue;
+
+                        // Check if this URL needs domain swapping
+                        const urlDomain = getDomain(mediaUrl);
+                        if (urlDomain.toLowerCase() === targetDomain.toLowerCase()) continue;
+
+                        // Only swap if it's a WP uploads path
                         if (!mediaUrl.includes('/wp-content/uploads/')) continue;
 
-                        // Swap domain in the media URL
                         const newUrl = buildExpectedUrl(mediaUrl, targetDomain);
                         if (!newUrl || newUrl === mediaUrl) continue;
 
