@@ -191,7 +191,7 @@
 
             while (true) {
                 setStatus(`Fetching products (page ${page})...`, 'loading');
-                const resp = await fetch(`https://api.surecart.com/v1/products?page=${page}&per_page=${perPage}`, {
+                const resp = await fetch(`https://api.surecart.com/v1/products?page=${page}&limit=${perPage}`, {
                     headers: { 'Authorization': `Bearer ${apiKey}` }
                 });
                 if (!resp.ok) {
@@ -466,7 +466,7 @@
         // ── Fetch product_medias for a product ──
         async function fetchProductMedias(productId) {
             const apiKey = document.getElementById('apiKey').value.trim();
-            const resp = await fetch(`https://api.surecart.com/v1/product_medias?product_ids[]=${productId}&limit=100`, {
+            const resp = await fetch(`https://api.surecart.com/v1/product_medias?product_ids[]=${productId}&limit=100&page=1`, {
                 headers: { 'Authorization': `Bearer ${apiKey}` }
             });
             if (!resp.ok) {
